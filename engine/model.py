@@ -8,11 +8,11 @@ import numpy as np
 import torch
 from PIL import Image
 
-from ultralytics.cfg import TASK2DATA, get_cfg, get_save_dir
-from ultralytics.engine.results import Results
-from ultralytics.hub import HUB_WEB_ROOT, HUBTrainingSession
-from ultralytics.nn.tasks import attempt_load_one_weight, guess_model_task, nn, yaml_model_load
-from ultralytics.utils import (
+from cfg import TASK2DATA, get_cfg, get_save_dir
+from engine.results import Results
+
+from nn.tasks import attempt_load_one_weight, guess_model_task, nn, yaml_model_load
+from utils import (
     ARGV,
     ASSETS,
     DEFAULT_CFG_DICT,
@@ -27,89 +27,15 @@ from ultralytics.utils import (
 
 
 class Model(nn.Module):
-    """
-    A base class for implementing YOLO models, unifying APIs across different model types.
-
-    This class provides a common interface for various operations related to YOLO models, such as training,
-    validation, prediction, exporting, and benchmarking. It handles different types of models, including those
-    loaded from local files, Ultralytics HUB, or Triton Server.
-
-    Attributes:
-        callbacks (Dict): A dictionary of callback functions for various events during model operations.
-        predictor (BasePredictor): The predictor object used for making predictions.
-        model (nn.Module): The underlying PyTorch model.
-        trainer (BaseTrainer): The trainer object used for training the model.
-        ckpt (Dict): The checkpoint data if the model is loaded from a *.pt file.
-        cfg (str): The configuration of the model if loaded from a *.yaml file.
-        ckpt_path (str): The path to the checkpoint file.
-        overrides (Dict): A dictionary of overrides for model configuration.
-        metrics (Dict): The latest training/validation metrics.
-        session (HUBTrainingSession): The Ultralytics HUB session, if applicable.
-        task (str): The type of task the model is intended for.
-        model_name (str): The name of the model.
-
-    Methods:
-        __call__: Alias for the predict method, enabling the model instance to be callable.
-        _new: Initializes a new model based on a configuration file.
-        _load: Loads a model from a checkpoint file.
-        _check_is_pytorch_model: Ensures that the model is a PyTorch model.
-        reset_weights: Resets the model's weights to their initial state.
-        load: Loads model weights from a specified file.
-        save: Saves the current state of the model to a file.
-        info: Logs or returns information about the model.
-        fuse: Fuses Conv2d and BatchNorm2d layers for optimized inference.
-        predict: Performs object detection predictions.
-        track: Performs object tracking.
-        val: Validates the model on a dataset.
-        benchmark: Benchmarks the model on various export formats.
-        export: Exports the model to different formats.
-        train: Trains the model on a dataset.
-        tune: Performs hyperparameter tuning.
-        _apply: Applies a function to the model's tensors.
-        add_callback: Adds a callback function for an event.
-        clear_callback: Clears all callbacks for an event.
-        reset_callbacks: Resets all callbacks to their default functions.
-
-    Examples:
-        >>> from ultralytics import YOLO
-        >>> model = YOLO("yolov8n.pt")
-        >>> results = model.predict("image.jpg")
-        >>> model.train(data="coco128.yaml", epochs=3)
-        >>> metrics = model.val()
-        >>> model.export(format="onnx")
-    """
-
+    
     def __init__(
         self,
         model: Union[str, Path] = "yolov8n.pt",
         task: str = None,
         verbose: bool = False,
     ) -> None:
-        """
-        Initializes a new instance of the YOLO model class.
-
-        This constructor sets up the model based on the provided model path or name. It handles various types of
-        model sources, including local files, Ultralytics HUB models, and Triton Server models. The method
-        initializes several important attributes of the model and prepares it for operations like training,
-        prediction, or export.
-
-        Args:
-            model (Union[str, Path]): Path or name of the model to load or create. Can be a local file path, a
-                model name from Ultralytics HUB, or a Triton Server model.
-            task (str | None): The task type associated with the YOLO model, specifying its application domain.
-            verbose (bool): If True, enables verbose output during the model's initialization and subsequent
-                operations.
-
-        Raises:
-            FileNotFoundError: If the specified model file does not exist or is inaccessible.
-            ValueError: If the model file or configuration is invalid or unsupported.
-            ImportError: If required dependencies for specific model types (like HUB SDK) are not installed.
-
-        Examples:
-            >>> model = Model("yolov8n.pt")
-            >>> model = Model("path/to/model.yaml", task="detect")
-            >>> model = Model("hub_model", verbose=True)
-        """
+    
+    
         super().__init__()
         self.callbacks = callbacks.get_default_callbacks()
         self.predictor = None  # reuse predictor
@@ -124,20 +50,7 @@ class Model(nn.Module):
         self.task = task  # task type
         model = str(model).strip()
 
-        # Check if Ultralytics HUB model from https://hub.ultralytics.com
-        if self.is_hub_model(model):
-            # Fetch model from HUB
-            checks.check_requirements("hub-sdk>=0.0.8")
-            session = HUBTrainingSession.create_session(model)
-            model = session.model_file
-            if session.train_args:  # training sent from HUB
-                self.session = session
-
-        # Check if Triton Server model
-        elif self.is_triton_model(model):
-            self.model_name = self.model = model
-            return
-
+       
         # Load or create new YOLO model
         if Path(model).suffix in {".yaml", ".yml"}:
             self._new(model, task=task, verbose=verbose)
@@ -150,90 +63,11 @@ class Model(nn.Module):
         stream: bool = False,
         **kwargs,
     ) -> list:
-        """
-        Alias for the predict method, enabling the model instance to be callable for predictions.
-
-        This method simplifies the process of making predictions by allowing the model instance to be called
-        directly with the required arguments.
-
-        Args:
-            source (str | Path | int | PIL.Image | np.ndarray | torch.Tensor | List | Tuple): The source of
-                the image(s) to make predictions on. Can be a file path, URL, PIL image, numpy array, PyTorch
-                tensor, or a list/tuple of these.
-            stream (bool): If True, treat the input source as a continuous stream for predictions.
-            **kwargs (Any): Additional keyword arguments to configure the prediction process.
-
-        Returns:
-            (List[ultralytics.engine.results.Results]): A list of prediction results, each encapsulated in a
-                Results object.
-
-        Examples:
-            >>> model = YOLO("yolov8n.pt")
-            >>> results = model("https://ultralytics.com/images/bus.jpg")
-            >>> for r in results:
-            ...     print(f"Detected {len(r)} objects in image")
-        """
+    
         return self.predict(source, stream, **kwargs)
 
-    @staticmethod
-    def is_triton_model(model: str) -> bool:
-        """
-        Checks if the given model string is a Triton Server URL.
-
-        This static method determines whether the provided model string represents a valid Triton Server URL by
-        parsing its components using urllib.parse.urlsplit().
-
-        Args:
-            model (str): The model string to be checked.
-
-        Returns:
-            (bool): True if the model string is a valid Triton Server URL, False otherwise.
-
-        Examples:
-            >>> Model.is_triton_model("http://localhost:8000/v2/models/yolov8n")
-            True
-            >>> Model.is_triton_model("yolov8n.pt")
-            False
-        """
-        from urllib.parse import urlsplit
-
-        url = urlsplit(model)
-        return url.netloc and url.path and url.scheme in {"http", "grpc"}
-
-    @staticmethod
-    def is_hub_model(model: str) -> bool:
-        """
-        Check if the provided model is an Ultralytics HUB model.
-
-        This static method determines whether the given model string represents a valid Ultralytics HUB model
-        identifier. It checks for three possible formats: a full HUB URL, an API key and model ID combination,
-        or a standalone model ID.
-
-        Args:
-            model (str): The model identifier to check. This can be a URL, an API key and model ID
-                combination, or a standalone model ID.
-
-        Returns:
-            (bool): True if the model is a valid Ultralytics HUB model, False otherwise.
-
-        Examples:
-            >>> Model.is_hub_model("https://hub.ultralytics.com/models/example_model")
-            True
-            >>> Model.is_hub_model("api_key_example_model_id")
-            True
-            >>> Model.is_hub_model("example_model_id")
-            True
-            >>> Model.is_hub_model("not_a_hub_model.pt")
-            False
-        """
-        return any(
-            (
-                model.startswith(f"{HUB_WEB_ROOT}/models/"),  # i.e. https://hub.ultralytics.com/models/MODEL_ID
-                [len(x) for x in model.split("_")] == [42, 20],  # APIKEY_MODEL
-                len(model) == 20 and not Path(model).exists() and all(x not in model for x in "./\\"),  # MODEL
-            )
-        )
-
+    
+    
     def _new(self, cfg: str, task=None, model=None, verbose=False) -> None:
         """
         Initializes a new model and infers the task type from the model definitions.
@@ -270,25 +104,7 @@ class Model(nn.Module):
         self.model_name = cfg
 
     def _load(self, weights: str, task=None) -> None:
-        """
-        Loads a model from a checkpoint file or initializes it from a weights file.
-
-        This method handles loading models from either .pt checkpoint files or other weight file formats. It sets
-        up the model, task, and related attributes based on the loaded weights.
-
-        Args:
-            weights (str): Path to the model weights file to be loaded.
-            task (str | None): The task associated with the model. If None, it will be inferred from the model.
-
-        Raises:
-            FileNotFoundError: If the specified weights file does not exist or is inaccessible.
-            ValueError: If the weights file format is unsupported or invalid.
-
-        Examples:
-            >>> model = Model()
-            >>> model._load("yolov8n.pt")
-            >>> model._load("path/to/weights.pth", task="detect")
-        """
+    
         if weights.lower().startswith(("https://", "http://", "rtsp://", "rtmp://", "tcp://")):
             weights = checks.check_file(weights, download_dir=SETTINGS["weights_dir"])  # download and return local file
         weights = checks.check_model_file_from_stem(weights)  # add suffix, i.e. yolov8n -> yolov8n.pt
@@ -308,22 +124,7 @@ class Model(nn.Module):
         self.model_name = weights
 
     def _check_is_pytorch_model(self) -> None:
-        """
-        Checks if the model is a PyTorch model and raises a TypeError if it's not.
-
-        This method verifies that the model is either a PyTorch module or a .pt file. It's used to ensure that
-        certain operations that require a PyTorch model are only performed on compatible model types.
-
-        Raises:
-            TypeError: If the model is not a PyTorch module or a .pt file. The error message provides detailed
-                information about supported model formats and operations.
-
-        Examples:
-            >>> model = Model("yolov8n.pt")
-            >>> model._check_is_pytorch_model()  # No error raised
-            >>> model = Model("yolov8n.onnx")
-            >>> model._check_is_pytorch_model()  # Raises TypeError
-        """
+    
         pt_str = isinstance(self.model, (str, Path)) and Path(self.model).suffix == ".pt"
         pt_module = isinstance(self.model, nn.Module)
         if not (pt_module or pt_str):
@@ -336,23 +137,6 @@ class Model(nn.Module):
             )
 
     def reset_weights(self) -> "Model":
-        """
-        Resets the model's weights to their initial state.
-
-        This method iterates through all modules in the model and resets their parameters if they have a
-        'reset_parameters' method. It also ensures that all parameters have 'requires_grad' set to True,
-        enabling them to be updated during training.
-
-        Returns:
-            (Model): The instance of the class with reset weights.
-
-        Raises:
-            AssertionError: If the model is not a PyTorch model.
-
-        Examples:
-            >>> model = Model("yolov8n.pt")
-            >>> model.reset_weights()
-        """
         self._check_is_pytorch_model()
         for m in self.model.modules():
             if hasattr(m, "reset_parameters"):

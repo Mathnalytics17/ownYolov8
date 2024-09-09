@@ -7,7 +7,7 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 
-from ultralytics.nn.modules import (
+from nn.modules import (
     AIFI,
     C1,
     C2,

@@ -1,6 +1,6 @@
 # Ultralytics YOLO 🚀, AGPL-3.0 license
 
-from ultralytics.utils import LOGGER, RANK, SETTINGS, TESTS_RUNNING, ops
+from utils import LOGGER, RANK, SETTINGS, TESTS_RUNNING, ops
 
 try:
     assert not TESTS_RUNNING  # do not log pytest

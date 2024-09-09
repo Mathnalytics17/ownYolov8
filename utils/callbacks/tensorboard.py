@@ -2,7 +2,7 @@
 
 import contextlib
 
-from ultralytics.utils import LOGGER, SETTINGS, TESTS_RUNNING, colorstr
+from utils import LOGGER, SETTINGS, TESTS_RUNNING, colorstr
 
 try:
     # WARNING: do not move SummaryWriter import due to protobuf bug https://github.com/ultralytics/ultralytics/pull/4674

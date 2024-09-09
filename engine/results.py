@@ -12,10 +12,10 @@ from pathlib import Path
 import numpy as np
 import torch
 
-from ultralytics.data.augment import LetterBox
-from ultralytics.utils import LOGGER, SimpleClass, ops
-from ultralytics.utils.plotting import Annotator, colors, save_one_box
-from ultralytics.utils.torch_utils import smart_inference_mode
+from data.augment import LetterBox
+from utils import LOGGER, SimpleClass, ops
+from utils.plotting import Annotator, colors, save_one_box
+from utils.torch_utils import smart_inference_mode
 
 
 class BaseTensor(SimpleClass):
